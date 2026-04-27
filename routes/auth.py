@@ -1,100 +1,113 @@
+from urllib.parse import urlencode
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+
+from auth import create_access_token, get_current_user_id
+from config import settings
 from database import get_db
 from models import User
-from schemas import UserCreate, OTPVerify, Token, UserResponse
-from auth import generate_otp, create_access_token
+from schemas import GoogleAuthURL, Token, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@router.post("/request-otp")
-def request_otp(user_data: UserCreate, db: Session = Depends(get_db)):
-    """
-    Request OTP for login/signup.
-    In Phase 0, we just generate and store OTP (no SMS sending).
-    In production, integrate with SMS service.
-    """
-    user = db.query(User).filter(User.phone == user_data.phone).first()
-    
-    otp = generate_otp()
-    otp_expiry = datetime.utcnow() + timedelta(minutes=5)
-    
-    if user:
-        # Update existing user
-        user.otp = otp
-        user.otp_expiry = otp_expiry
-    else:
-        # Create new user
-        user = User(
-            phone=user_data.phone,
-            otp=otp,
-            otp_expiry=otp_expiry
-        )
-        db.add(user)
-    
-    db.commit()
-    db.refresh(user)
-    
-    # In Phase 0, return OTP in response (ONLY FOR TESTING!)
-    # Remove this in production and send via SMS
-    return {
-        "message": "OTP sent successfully",
-        "phone": user_data.phone,
-        "otp": otp  # REMOVE IN PRODUCTION
-    }
+GOOGLE_AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-@router.post("/verify-otp", response_model=Token)
-def verify_otp(verify_data: OTPVerify, db: Session = Depends(get_db)):
+
+def _callback_url() -> str:
+    return f"{settings.app_url}/auth/google/callback"
+
+
+@router.get("/google/url", response_model=GoogleAuthURL)
+def google_auth_url(local_redirect: str):
     """
-    Verify OTP and return access token
+    Returns the Google OAuth2 authorisation URL.
+    local_redirect  — where the Kivy app is listening (e.g. http://localhost:8765)
+                      passed as OAuth2 'state' so the backend can forward the token there.
     """
-    user = db.query(User).filter(User.phone == verify_data.phone).first()
-    
+    if not settings.google_client_id:
+        raise HTTPException(status_code=500,
+                            detail="GOOGLE_CLIENT_ID is not configured on the server.")
+    params = {
+        "client_id":     settings.google_client_id,
+        "redirect_uri":  _callback_url(),
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "state":         local_redirect,
+        "access_type":   "offline",
+        "prompt":        "select_account",
+    }
+    return {"url": f"{GOOGLE_AUTH_URL}?{urlencode(params)}"}
+
+
+@router.get("/google/callback")
+async def google_callback(code: str, state: str, db: Session = Depends(get_db)):
+    """
+    Google redirects here after the user approves.
+    Exchanges the code for a token, upserts the user, then redirects to
+    the Kivy local server with the JWT.
+    """
+    # Exchange authorisation code for Google access token
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(GOOGLE_TOKEN_URL, data={
+            "code":          code,
+            "client_id":     settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri":  _callback_url(),
+            "grant_type":    "authorization_code",
+        })
+        if token_resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to exchange Google code")
+        token_data = token_resp.json()
+
+        # Fetch user info from Google
+        info_resp = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {token_data['access_token']}"},
+        )
+        if info_resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to fetch Google user info")
+        info = info_resp.json()
+
+    google_id = info.get("id")
+    email     = info.get("email")
+
+    # Find or create user
+    user = db.query(User).filter(User.google_id == google_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    # Check OTP
-    if user.otp != verify_data.otp:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid OTP"
-        )
-    
-    # Check OTP expiry
-    if user.otp_expiry < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="OTP expired"
-        )
-    
-    # Mark user as verified
-    user.is_verified = 1
-    user.otp = None
-    user.otp_expiry = None
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.google_id       = google_id
+            user.profile_picture = info.get("picture")
+        else:
+            user = User(
+                google_id       = google_id,
+                email           = email,
+                name            = info.get("name"),
+                profile_picture = info.get("picture"),
+                is_active       = True,
+            )
+            db.add(user)
+    else:
+        user.profile_picture = info.get("picture")
+
     db.commit()
     db.refresh(user)
-    
-    # Create access token
-    access_token = create_access_token(data={"sub": str(user.id), "phone": user.phone})
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": user
-    }
+
+    jwt_token = create_access_token({"sub": str(user.id)})
+
+    # Forward token to the Kivy local server
+    return RedirectResponse(f"{state}?token={jwt_token}&user_id={user.id}")
+
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user(
-    db: Session = Depends(get_db),
-    token: str = Depends(lambda: None)  # Simplified for Phase 0
-):
-    """
-    Get current user details
-    """
-    # This is simplified for Phase 0
-    # In production, properly decode token from Authorization header
-    pass
+def get_me(user_id: int = Depends(get_current_user_id),
+           db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user

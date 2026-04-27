@@ -1,29 +1,38 @@
 from datetime import datetime, timedelta
 from typing import Optional
+
+from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+
 from config import settings
-import random
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def generate_otp() -> str:
-    """Generate a 6-digit OTP"""
-    return str(random.randint(100000, 999999))
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.utcnow() + (
+        expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
+    )
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
-def verify_token(token: str):
+
+def verify_token(token: str) -> Optional[dict]:
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
         return None
+
+
+def get_current_user_id(authorization: Optional[str] = Header(None)) -> int:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Not authenticated")
+    payload = verify_token(authorization[7:])
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid or expired token")
+    try:
+        return int(payload["sub"])
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid token payload")
