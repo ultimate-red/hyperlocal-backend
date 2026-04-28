@@ -17,6 +17,12 @@ services:
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 43200
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: APP_URL
+        value: https://hyperlocal-backend-2tho.onrender.com
 
 databases:
   - name: hyperlocal-db
