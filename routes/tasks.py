@@ -76,7 +76,8 @@ def get_open_tasks(db: Session = Depends(get_db),
                    user_id: int = Depends(get_current_user_id)):
     tasks = (db.query(Task)
                .filter(Task.status == TaskStatus.OPEN,
-                       Task.hidden_from_creator == False)
+                       Task.hidden_from_creator == False,
+                       Task.created_by != user_id)
                .order_by(Task.created_at.desc()).all())
     return [_resp(t, db) for t in tasks]
 
