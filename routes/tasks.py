@@ -192,8 +192,11 @@ def repost_task(task_id: int, db: Session = Depends(get_db),
 def delete_task(task_id: int, db: Session = Depends(get_db),
                 user_id: int = Depends(get_current_user_id)):
     task = _get_or_404(task_id, db)
-    if task.created_by != user_id:
-        raise HTTPException(status_code=403, detail="Only the creator can remove this task")
-    task.hidden_from_creator = True
+    if task.created_by == user_id:
+        task.hidden_from_creator = True
+    elif task.accepted_by == user_id:
+        task.hidden_from_acceptor = True
+    else:
+        raise HTTPException(status_code=403, detail="Not authorised to remove this task")
     db.commit()
     return {"message": "Task removed"}
