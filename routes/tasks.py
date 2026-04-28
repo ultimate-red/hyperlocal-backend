@@ -105,6 +105,54 @@ def get_all_tasks(
     
     return task_responses
 
+@router.get("/mine/posted", response_model=List[TaskResponse])
+def get_my_posted_tasks(
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    tasks = db.query(Task).filter(
+        Task.created_by == user_id
+    ).order_by(Task.created_at.desc()).all()
+
+    result = []
+    for task in tasks:
+        creator  = db.query(User).filter(User.id == task.created_by).first()
+        acceptor = db.query(User).filter(User.id == task.accepted_by).first() if task.accepted_by else None
+        result.append(TaskResponse(
+            id=task.id, title=task.title, description=task.description,
+            reward=task.reward, status=task.status.value,
+            created_by=task.created_by, accepted_by=task.accepted_by,
+            created_at=task.created_at, updated_at=task.updated_at,
+            creator_name=creator.name if creator else None,
+            acceptor_name=acceptor.name if acceptor else None,
+        ))
+    return result
+
+
+@router.get("/mine/taken", response_model=List[TaskResponse])
+def get_my_taken_tasks(
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    tasks = db.query(Task).filter(
+        Task.accepted_by == user_id
+    ).order_by(Task.created_at.desc()).all()
+
+    result = []
+    for task in tasks:
+        creator  = db.query(User).filter(User.id == task.created_by).first()
+        acceptor = db.query(User).filter(User.id == task.accepted_by).first() if task.accepted_by else None
+        result.append(TaskResponse(
+            id=task.id, title=task.title, description=task.description,
+            reward=task.reward, status=task.status.value,
+            created_by=task.created_by, accepted_by=task.accepted_by,
+            created_at=task.created_at, updated_at=task.updated_at,
+            creator_name=creator.name if creator else None,
+            acceptor_name=acceptor.name if acceptor else None,
+        ))
+    return result
+
+
 @router.get("/mine", response_model=List[TaskResponse])
 def get_my_tasks(
     db: Session = Depends(get_db),
