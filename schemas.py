@@ -55,17 +55,24 @@ class TaskUpdate(BaseModel):
 
 
 class TaskResponse(BaseModel):
-    id:            int
-    title:         str
-    description:   Optional[str]   = None
-    reward:        Optional[float] = None
-    status:        str
-    created_by:    int
-    accepted_by:   Optional[int]   = None
-    created_at:    datetime
-    updated_at:    datetime
-    creator_name:  Optional[str]   = None
-    acceptor_name: Optional[str]   = None
+    id:                   int
+    title:                str
+    description:          Optional[str]   = None
+    reward:               Optional[float] = None
+    status:               str
+    created_by:           int
+    accepted_by:          Optional[int]   = None
+    abort_reason:         Optional[str]   = None
+    hidden_from_creator:  bool            = False
+    hidden_from_acceptor: bool            = False
+    created_at:           datetime
+    updated_at:           datetime
+    creator_name:         Optional[str]   = None
+    acceptor_name:        Optional[str]   = None
 
     class Config:
         from_attributes = True
+
+
+class TaskAbort(BaseModel):
+    reason: str
