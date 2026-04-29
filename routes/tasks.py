@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from database import get_db
-from models import User, Task, TaskStatus
+from models import Review, User, Task, TaskStatus
 from notifications import send_push
 from schemas import TaskAbort, TaskCreate, TaskResponse
 from auth import verify_token
@@ -33,6 +33,11 @@ def get_current_user_id(authorization: Optional[str] = Header(None),
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
+def _avg_rating(user_id: int, db: Session):
+    rows = db.query(Review).filter(Review.reviewee_id == user_id).all()
+    return round(sum(r.rating for r in rows) / len(rows), 1) if rows else None
+
+
 def _resp(task: Task, db: Session) -> TaskResponse:
     creator  = db.query(User).filter(User.id == task.created_by).first()
     acceptor = db.query(User).filter(User.id == task.accepted_by).first() if task.accepted_by else None
@@ -43,9 +48,12 @@ def _resp(task: Task, db: Session) -> TaskResponse:
         abort_reason=task.abort_reason,
         hidden_from_creator=task.hidden_from_creator,
         hidden_from_acceptor=task.hidden_from_acceptor,
+        task_type=task.task_type,
         created_at=task.created_at, updated_at=task.updated_at,
         creator_name=creator.name if creator else None,
         acceptor_name=acceptor.name if acceptor else None,
+        creator_rating=_avg_rating(task.created_by, db),
+        acceptor_rating=_avg_rating(task.accepted_by, db) if task.accepted_by else None,
     )
 
 
@@ -66,6 +74,7 @@ def create_task(task_data: TaskCreate, background_tasks: BackgroundTasks,
         title=task_data.title, description=task_data.description,
         reward=task_data.reward, created_by=user_id,
         status=TaskStatus.OPEN.value,
+        task_type=task_data.task_type,
     )
     db.add(task)
     db.commit()

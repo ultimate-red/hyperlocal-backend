@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user_id
 from database import get_db
-from models import User
+from models import Review, User
 from schemas import FCMTokenUpdate, UserProfileUpdate, UserResponse
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -15,7 +15,15 @@ def get_profile(user_id: int = Depends(get_current_user_id),
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    reviews = db.query(Review).filter(Review.reviewee_id == user_id).all()
+    avg = round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else None
+    return {
+        "id": user.id, "email": user.email, "name": user.name,
+        "profile_picture": user.profile_picture, "bio": user.bio,
+        "location": user.location, "phone": user.phone,
+        "is_active": user.is_active, "created_at": user.created_at,
+        "average_rating": avg, "review_count": len(reviews),
+    }
 
 
 @router.put("/me", response_model=UserResponse)

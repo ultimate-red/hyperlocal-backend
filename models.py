@@ -4,7 +4,7 @@ import enum
 def _now():
     return datetime.now(timezone.utc)
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -30,6 +30,18 @@ class User(Base):
     accepted_tasks = relationship("Task", foreign_keys="Task.accepted_by", back_populates="acceptor")
 
 
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    category   = Column(String, nullable=False)
+    message    = Column(String, nullable=False)
+    created_at = Column(DateTime, default=_now)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class TaskStatus(str, enum.Enum):
     OPEN      = "open"
     ACCEPTED  = "accepted"
@@ -50,8 +62,26 @@ class Task(Base):
     abort_reason         = Column(String, nullable=True)
     hidden_from_creator  = Column(Boolean, default=False, nullable=False)
     hidden_from_acceptor = Column(Boolean, default=False, nullable=False)
+    task_type            = Column(String, default="request", nullable=False)
     created_at           = Column(DateTime, default=_now)
     updated_at           = Column(DateTime, default=_now, onupdate=_now)
 
     creator  = relationship("User", foreign_keys=[created_by],  back_populates="created_tasks")
     acceptor = relationship("User", foreign_keys=[accepted_by], back_populates="accepted_tasks")
+
+
+class Review(Base):
+    __tablename__ = "reviews"
+    __table_args__ = (UniqueConstraint("task_id", "reviewer_id", name="uq_review_task_reviewer"),)
+
+    id          = Column(Integer, primary_key=True, index=True)
+    task_id     = Column(Integer, ForeignKey("tasks.id"), nullable=False)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    reviewee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating      = Column(Integer, nullable=False)
+    comment     = Column(String, nullable=True)
+    created_at  = Column(DateTime, default=_now)
+
+    task     = relationship("Task", foreign_keys=[task_id])
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
+    reviewee = relationship("User", foreign_keys=[reviewee_id])
