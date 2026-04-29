@@ -22,7 +22,10 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: APP_URL
-        value: https://hyperlocal-backend-2tho.onrender.com
+        value: https://hyperlocal-backend-8ixl.onrender.com
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+
 
 databases:
   - name: hyperlocal-db

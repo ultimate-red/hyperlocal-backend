@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user_id
 from database import get_db
 from models import User
-from schemas import UserProfileUpdate, UserResponse
+from schemas import FCMTokenUpdate, UserProfileUpdate, UserResponse
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -34,3 +34,15 @@ def update_profile(data: UserProfileUpdate,
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.put("/me/fcm-token")
+def update_fcm_token(data: FCMTokenUpdate,
+                     user_id: int = Depends(get_current_user_id),
+                     db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.fcm_token = data.token
+    db.commit()
+    return {"message": "FCM token updated"}

@@ -21,6 +21,7 @@ class User(Base):
     bio             = Column(String, nullable=True)
     location        = Column(String, nullable=True)
     phone           = Column(String, unique=True, index=True, nullable=True)
+    fcm_token       = Column(String, nullable=True)
     is_active       = Column(Boolean, default=True)
     created_at      = Column(DateTime, default=_now)
     updated_at      = Column(DateTime, default=_now, onupdate=_now)

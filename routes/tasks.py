@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Header
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from database import get_db
 from models import User, Task, TaskStatus
+from notifications import send_push
 from schemas import TaskAbort, TaskCreate, TaskResponse
 from auth import verify_token
 
@@ -58,7 +59,8 @@ def _get_or_404(task_id: int, db: Session) -> Task:
 # ── Public feed ────────────────────────────────────────────────────────────────
 
 @router.post("/", response_model=TaskResponse)
-def create_task(task_data: TaskCreate, db: Session = Depends(get_db),
+def create_task(task_data: TaskCreate, background_tasks: BackgroundTasks,
+                db: Session = Depends(get_db),
                 user_id: int = Depends(get_current_user_id)):
     task = Task(
         title=task_data.title, description=task_data.description,
@@ -68,6 +70,13 @@ def create_task(task_data: TaskCreate, db: Session = Depends(get_db),
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    creator = db.query(User).filter(User.id == user_id).first()
+    background_tasks.add_task(
+        send_push, creator.fcm_token if creator else None,
+        "Task Posted!",
+        f"Your task '{task.title}' is now live.",
+    )
     return _resp(task, db)
 
 
@@ -124,7 +133,8 @@ def get_task(task_id: int, db: Session = Depends(get_db),
 # ── Actions ────────────────────────────────────────────────────────────────────
 
 @router.post("/{task_id}/accept", response_model=TaskResponse)
-def accept_task(task_id: int, db: Session = Depends(get_db),
+def accept_task(task_id: int, background_tasks: BackgroundTasks,
+                db: Session = Depends(get_db),
                 user_id: int = Depends(get_current_user_id)):
     task = _get_or_404(task_id, db)
     if task.status != TaskStatus.OPEN:
@@ -135,11 +145,21 @@ def accept_task(task_id: int, db: Session = Depends(get_db),
     task.status = TaskStatus.ACCEPTED.value
     db.commit()
     db.refresh(task)
+
+    creator  = db.query(User).filter(User.id == task.created_by).first()
+    acceptor = db.query(User).filter(User.id == user_id).first()
+    acceptor_name = acceptor.name if acceptor else "Someone"
+    background_tasks.add_task(
+        send_push, creator.fcm_token if creator else None,
+        "Task Accepted!",
+        f"{acceptor_name} has accepted your task '{task.title}'.",
+    )
     return _resp(task, db)
 
 
 @router.post("/{task_id}/complete", response_model=TaskResponse)
-def complete_task(task_id: int, db: Session = Depends(get_db),
+def complete_task(task_id: int, background_tasks: BackgroundTasks,
+                  db: Session = Depends(get_db),
                   user_id: int = Depends(get_current_user_id)):
     task = _get_or_404(task_id, db)
     if task.status != TaskStatus.ACCEPTED:
@@ -149,11 +169,21 @@ def complete_task(task_id: int, db: Session = Depends(get_db),
     task.status = TaskStatus.COMPLETED.value
     db.commit()
     db.refresh(task)
+
+    creator  = db.query(User).filter(User.id == task.created_by).first()
+    acceptor = db.query(User).filter(User.id == user_id).first()
+    acceptor_name = acceptor.name if acceptor else "Someone"
+    background_tasks.add_task(
+        send_push, creator.fcm_token if creator else None,
+        "Task Completed!",
+        f"{acceptor_name} has completed your task '{task.title}'.",
+    )
     return _resp(task, db)
 
 
 @router.post("/{task_id}/abort", response_model=TaskResponse)
-def abort_task(task_id: int, body: TaskAbort, db: Session = Depends(get_db),
+def abort_task(task_id: int, body: TaskAbort, background_tasks: BackgroundTasks,
+               db: Session = Depends(get_db),
                user_id: int = Depends(get_current_user_id)):
     task = _get_or_404(task_id, db)
     if task.status != TaskStatus.ACCEPTED:
@@ -166,6 +196,15 @@ def abort_task(task_id: int, body: TaskAbort, db: Session = Depends(get_db),
     task.abort_reason = body.reason.strip()
     db.commit()
     db.refresh(task)
+
+    creator  = db.query(User).filter(User.id == task.created_by).first()
+    acceptor = db.query(User).filter(User.id == user_id).first()
+    acceptor_name = acceptor.name if acceptor else "Someone"
+    background_tasks.add_task(
+        send_push, creator.fcm_token if creator else None,
+        "Task Aborted",
+        f"{acceptor_name} aborted your task '{task.title}'.",
+    )
     return _resp(task, db)
 
 

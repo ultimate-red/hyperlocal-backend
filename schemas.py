@@ -76,3 +76,7 @@ class TaskResponse(BaseModel):
 
 class TaskAbort(BaseModel):
     reason: str
+
+
+class FCMTokenUpdate(BaseModel):
+    token: str
