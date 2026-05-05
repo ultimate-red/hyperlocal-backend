@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -5,6 +6,8 @@ from auth import get_current_user_id
 from database import get_db
 from models import Review, User
 from schemas import FCMTokenUpdate, UserProfileUpdate, UserResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -48,9 +51,12 @@ def update_profile(data: UserProfileUpdate,
 def update_fcm_token(data: FCMTokenUpdate,
                      user_id: int = Depends(get_current_user_id),
                      db: Session = Depends(get_db)):
+    logger.info(f"FCM token update request for user {user_id}: {data.token[:20]}...")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
+        logger.warning(f"User {user_id} not found for FCM token update")
         raise HTTPException(status_code=404, detail="User not found")
     user.fcm_token = data.token
     db.commit()
+    logger.info(f"FCM token saved for user {user_id}")
     return {"message": "FCM token updated"}
