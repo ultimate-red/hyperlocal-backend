@@ -48,7 +48,11 @@ def _init() -> bool:
 
 
 def send_push(token: Optional[str], title: str, body: str) -> None:
-    if not token or not _init():
+    if not token:
+        logger.warning("Push notification skipped: no FCM token provided")
+        return
+    if not _init():
+        logger.warning("Push notification skipped: Firebase not initialized")
         return
     try:
         from firebase_admin import messaging
@@ -57,5 +61,6 @@ def send_push(token: Optional[str], title: str, body: str) -> None:
             android=messaging.AndroidConfig(priority="high"),
             token=token,
         ))
+        logger.info("Push notification sent: %s", title)
     except Exception as exc:
-        logger.warning("Push notification failed: %s", exc)
+        logger.error("Push notification failed: %s", exc)
