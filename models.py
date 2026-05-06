@@ -70,6 +70,19 @@ class Task(Base):
     acceptor = relationship("User", foreign_keys=[accepted_by], back_populates="accepted_tasks")
 
 
+class AppLog(Base):
+    __tablename__ = "app_logs"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=True)
+    level      = Column(String, nullable=False)   # error | warning | info
+    message    = Column(String, nullable=False)
+    screen     = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_now)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class Review(Base):
     __tablename__ = "reviews"
     __table_args__ = (UniqueConstraint("task_id", "reviewer_id", name="uq_review_task_reviewer"),)
