@@ -83,6 +83,19 @@ class AppLog(Base):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title      = Column(String, nullable=False)
+    body       = Column(String, nullable=False)
+    is_read    = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_now)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class Review(Base):
     __tablename__ = "reviews"
     __table_args__ = (UniqueConstraint("task_id", "reviewer_id", name="uq_review_task_reviewer"),)

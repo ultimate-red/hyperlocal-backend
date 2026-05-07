@@ -6,6 +6,7 @@ from typing import List, Optional
 from database import get_db
 from models import Review, User, Task, TaskStatus
 from notifications import send_push
+from notif_utils import save_notification
 from schemas import TaskAbort, TaskCreate, TaskResponse
 from auth import verify_token
 
@@ -77,14 +78,14 @@ def create_task(task_data: TaskCreate, background_tasks: BackgroundTasks,
         task_type=task_data.task_type,
     )
     db.add(task)
+    creator = db.query(User).filter(User.id == user_id).first()
+    push_title = "Task Posted!"
+    push_body  = f"Your task '{task_data.title}' is now live."
+    save_notification(db, user_id, push_title, push_body)
     db.commit()
     db.refresh(task)
-
-    creator = db.query(User).filter(User.id == user_id).first()
     background_tasks.add_task(
-        send_push, creator.fcm_token if creator else None,
-        "Task Posted!",
-        f"Your task '{task.title}' is now live.",
+        send_push, creator.fcm_token if creator else None, push_title, push_body,
     )
     return _resp(task, db)
 
@@ -152,16 +153,16 @@ def accept_task(task_id: int, background_tasks: BackgroundTasks,
         raise HTTPException(status_code=400, detail="Cannot accept your own task")
     task.accepted_by = user_id
     task.status = TaskStatus.ACCEPTED.value
-    db.commit()
-    db.refresh(task)
-
     creator  = db.query(User).filter(User.id == task.created_by).first()
     acceptor = db.query(User).filter(User.id == user_id).first()
     acceptor_name = acceptor.name if acceptor else "Someone"
+    push_title = "Task Accepted!"
+    push_body  = f"{acceptor_name} has accepted your task '{task.title}'."
+    save_notification(db, task.created_by, push_title, push_body)
+    db.commit()
+    db.refresh(task)
     background_tasks.add_task(
-        send_push, creator.fcm_token if creator else None,
-        "Task Accepted!",
-        f"{acceptor_name} has accepted your task '{task.title}'.",
+        send_push, creator.fcm_token if creator else None, push_title, push_body,
     )
     return _resp(task, db)
 
@@ -176,16 +177,16 @@ def complete_task(task_id: int, background_tasks: BackgroundTasks,
     if task.accepted_by != user_id:
         raise HTTPException(status_code=403, detail="Only the acceptor can mark this task complete")
     task.status = TaskStatus.COMPLETED.value
-    db.commit()
-    db.refresh(task)
-
     creator  = db.query(User).filter(User.id == task.created_by).first()
     acceptor = db.query(User).filter(User.id == user_id).first()
     acceptor_name = acceptor.name if acceptor else "Someone"
+    push_title = "Task Completed!"
+    push_body  = f"{acceptor_name} has completed your task '{task.title}'."
+    save_notification(db, task.created_by, push_title, push_body)
+    db.commit()
+    db.refresh(task)
     background_tasks.add_task(
-        send_push, creator.fcm_token if creator else None,
-        "Task Completed!",
-        f"{acceptor_name} has completed your task '{task.title}'.",
+        send_push, creator.fcm_token if creator else None, push_title, push_body,
     )
     return _resp(task, db)
 
@@ -203,16 +204,16 @@ def abort_task(task_id: int, body: TaskAbort, background_tasks: BackgroundTasks,
         raise HTTPException(status_code=400, detail="Abort reason is required")
     task.status = TaskStatus.ABORTED.value
     task.abort_reason = body.reason.strip()
-    db.commit()
-    db.refresh(task)
-
     creator  = db.query(User).filter(User.id == task.created_by).first()
     acceptor = db.query(User).filter(User.id == user_id).first()
     acceptor_name = acceptor.name if acceptor else "Someone"
+    push_title = "Task Aborted"
+    push_body  = f"{acceptor_name} aborted your task '{task.title}'."
+    save_notification(db, task.created_by, push_title, push_body)
+    db.commit()
+    db.refresh(task)
     background_tasks.add_task(
-        send_push, creator.fcm_token if creator else None,
-        "Task Aborted",
-        f"{acceptor_name} aborted your task '{task.title}'.",
+        send_push, creator.fcm_token if creator else None, push_title, push_body,
     )
     return _resp(task, db)
 

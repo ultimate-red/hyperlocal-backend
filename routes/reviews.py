@@ -1,11 +1,13 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from auth import get_current_user_id
 from database import get_db
 from models import Review, Task, User
+from notifications import send_push
+from notif_utils import save_notification
 from schemas import ReviewCreate, ReviewResponse
 
 router = APIRouter(tags=["Reviews"])
@@ -29,6 +31,7 @@ def _to_response(review: Review, db: Session) -> ReviewResponse:
 def submit_review(
     task_id: int,
     data: ReviewCreate,
+    background_tasks: BackgroundTasks,
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -70,9 +73,18 @@ def submit_review(
         rating=data.rating,
         comment=data.comment.strip() if data.comment else None,
     )
+    reviewer = db.query(User).filter(User.id == user_id).first()
+    reviewee = db.query(User).filter(User.id == reviewee_id).first()
+    reviewer_name = reviewer.name if reviewer else "Someone"
+    push_title = "New Rating Received"
+    push_body  = f"{reviewer_name} gave you a {data.rating}/5 rating for '{task.title}'."
     db.add(review)
+    save_notification(db, reviewee_id, push_title, push_body)
     db.commit()
     db.refresh(review)
+    background_tasks.add_task(
+        send_push, reviewee.fcm_token if reviewee else None, push_title, push_body,
+    )
     return _to_response(review, db)
 
 

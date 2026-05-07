@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
-from routes import app_logs, auth, feedback, reviews, tasks, users
+from routes import app_logs, auth, feedback, notifications, reviews, tasks, users
 
 Base.metadata.create_all(bind=engine)
 
@@ -28,6 +28,7 @@ app.include_router(tasks.router)
 app.include_router(users.router)
 app.include_router(feedback.router)
 app.include_router(reviews.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")
